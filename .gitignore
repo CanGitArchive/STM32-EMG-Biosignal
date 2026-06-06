@@ -1,6 +1,9 @@
 # PlatformIO build + dependency cache
 .pio/
 
+# Raw serial-monitor logs (transient; curated copies live in docs/data/)
+logs/
+
 # Build artifacts
 *.bin
 *.elf
