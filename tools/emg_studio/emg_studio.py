@@ -16,7 +16,7 @@ Usage:
 
 Close the PlatformIO Serial Monitor first : only one program can hold the COM port.
 """
-import os, sys, argparse, threading, math
+import os, sys, signal, argparse, threading, math
 os.environ.setdefault('PYQTGRAPH_QT_LIB', 'PyQt6')
 import numpy as np
 import serial
@@ -82,6 +82,7 @@ class SerialReader(threading.Thread):
         self.sm = np.zeros(self.W); self.si = 0; self.ssum = 0.0
         self._stop = threading.Event()
         self.primed = False
+        self._rec = None        # when a list, each sample's (centered, env) is appended
 
     def run(self):
         self.ser.reset_input_buffer()
@@ -97,9 +98,13 @@ class SerialReader(threading.Thread):
             except ValueError:
                 continue
             if not self.primed:
+                # assume a relaxed start: prime filter + buffers so DTW reads "relaxed"
+                # from t=0 instead of drifting for ~5 s while the window fills from zeros
                 self.notch.x1 = self.notch.x2 = self.notch.y1 = self.notch.y2 = v
                 self.dc = v
                 self.raw_ring.fill(v)
+                self.sig_ring.fill(0.0)
+                self.env_ring.fill(0.0)
                 self.primed = True
                 continue
             nt = self.notch(v)
@@ -113,9 +118,20 @@ class SerialReader(threading.Thread):
             self.sig_ring.push(centered)
             self.env_ring.push(env)
             self.raw_ring.push(v)
+            rec = self._rec
+            if rec is not None:
+                rec.append((centered, env))
 
     def stop(self):
         self._stop.set()
+
+    def start_record(self):
+        self._rec = []
+
+    def stop_record(self):
+        r = self._rec
+        self._rec = None
+        return r or []
 
 
 class EmgStudio(QtWidgets.QMainWindow):
@@ -195,6 +211,7 @@ def main():
     ap.add_argument('--sig-max', type=float, default=1000.0)
     ap.add_argument('--env-max', type=float, default=600.0)
     args = ap.parse_args()
+    signal.signal(signal.SIGINT, signal.SIG_IGN)   # immune to stray SIGINT; close via window
 
     n = int(args.fs * args.seconds)
     k = max(1, int(0.3 * args.fs))
