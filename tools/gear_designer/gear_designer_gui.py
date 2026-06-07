@@ -47,9 +47,8 @@ class GearGUI(QtWidgets.QMainWindow):
         form.addRow('teeth', self.ed_teeth)
         left.addLayout(form)
 
-        self.info = QtWidgets.QLabel(); self.info.setWordWrap(True)
-        self.info.setStyleSheet('font-family: Consolas, monospace;')
-        self.info.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
+        self.info = QtWidgets.QTextEdit(); self.info.setReadOnly(True)
+        self.info.setStyleSheet('font-family: Consolas, monospace; font-size: 12px;')
         left.addWidget(self.info, 1)
 
         self.btn_export = QtWidgets.QPushButton('Export DXF(s)...')
@@ -82,39 +81,48 @@ class GearGUI(QtWidgets.QMainWindow):
     def update_preview(self):
         self.plot.clear()
         self.teeth = self.parse_teeth()
-        m = self.sb_module.value(); pa = self.sb_pa.value(); bl = self.sb_back.value()
+        m = self.sb_module.value(); pa = self.sb_pa.value()
+        bl = self.sb_back.value(); bore = self.sb_bore.value()
         if not self.teeth:
-            self.info.setText('enter tooth counts (>=4), e.g. "34 14 14"')
+            self.info.setHtml('enter tooth counts (&gt;=4), e.g. "34 14 14"')
             self.outlines = []
             return
         self.outlines = [gear_outline(m, z, pa, bl) for z in self.teeth]
 
+        def red(s):
+            return f'<span style="color:#c0392b; font-weight:bold">{s}</span>'
+
         cx = 0.0
-        lines = [f'module m = {m:.2f} mm   pressure angle {pa:.1f} deg', '']
         zmin = min_teeth_no_undercut(pa)
+        html = [f'module m = {m:.2f} mm &nbsp; pressure angle {pa:.1f} deg<br><br>']
         for i, (z, o) in enumerate(zip(self.teeth, self.outlines)):
             rp = m * z / 2.0
             oo = o + np.array([cx, 0.0])
-            col = COLORS[i % len(COLORS)]
             self.plot.plot(np.append(oo[:, 0], oo[0, 0]), np.append(oo[:, 1], oo[0, 1]),
-                           pen=pg.mkPen(col, width=1.5))
+                           pen=pg.mkPen(COLORS[i % len(COLORS)], width=1.5))
             th = np.linspace(0, 2 * math.pi, 120)
             self.plot.plot(cx + rp * np.cos(th), rp * np.sin(th),
                            pen=pg.mkPen('#888888', width=1, style=QtCore.Qt.PenStyle.DashLine))
             d = info(m, z, pa)
-            warn = '  <-- UNDERCUT (raise pressure angle or teeth)' if z < zmin else ''
-            lines.append(f'z={z:3d}  inner {d["root_dia"]:.2f}  pitch {d["pitch_dia"]:.2f}  '
-                         f'outer {d["outer_dia"]:.2f}{warn}')
+            html.append(f'<b>z = {z}</b><br>')
+            html.append(f'inner {d["root_dia"]:.2f} &nbsp; pitch {d["pitch_dia"]:.2f} '
+                        f'&nbsp; outer {d["outer_dia"]:.2f}<br>')
+            if z < zmin:
+                html.append(red(f'&lt;-- UNDERCUT (raise pressure angle or teeth)') + '<br>')
+            if bore >= d['root_dia']:
+                html.append(red(f'&lt;-- BORE {bore:.1f} &gt;= root {d["root_dia"]:.2f} '
+                                f'(cuts into teeth)') + '<br>')
+            html.append('<br>')
             if i < len(self.teeth) - 1:
                 cx += m * (z + self.teeth[i + 1]) / 2.0
         if len(self.teeth) > 1:
-            lines.append(''); lines.append('center distances (frame):')
+            html.append('center distances (frame):<br>')
             for i in range(len(self.teeth) - 1):
                 z1, z2 = self.teeth[i], self.teeth[i + 1]
-                lines.append(f'  z{z1} <-> z{z2}:  {m * (z1 + z2) / 2:.2f} mm')
-        lines.append('')
-        lines.append(f'min teeth (no undercut @ {pa:.0f} deg) = {zmin:.0f}')
-        self.info.setText('\n'.join(lines))
+                html.append(f'&nbsp; z{z1} &lt;-&gt; z{z2}: &nbsp; {m * (z1 + z2) / 2:.2f} mm<br>')
+            html.append('<br>')
+        html.append(f'min teeth (no undercut @ {pa:.0f} deg) = {zmin:.0f}')
+        self.info.setHtml(''.join(html))
 
     def on_export(self):
         if not self.outlines:
