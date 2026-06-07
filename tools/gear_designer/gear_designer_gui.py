@@ -102,8 +102,9 @@ class GearGUI(QtWidgets.QMainWindow):
             self.plot.plot(cx + rp * np.cos(th), rp * np.sin(th),
                            pen=pg.mkPen('#888888', width=1, style=QtCore.Qt.PenStyle.DashLine))
             d = info(m, z, pa)
-            warn = '  <-- UNDERCUT (raise teeth or pressure angle)' if z < zmin else ''
-            lines.append(f'z={z:3d}  pitch {d["pitch_dia"]:.2f}  outer {d["outer_dia"]:.2f}{warn}')
+            warn = '  <-- UNDERCUT (raise pressure angle or teeth)' if z < zmin else ''
+            lines.append(f'z={z:3d}  inner {d["root_dia"]:.2f}  pitch {d["pitch_dia"]:.2f}  '
+                         f'outer {d["outer_dia"]:.2f}{warn}')
             if i < len(self.teeth) - 1:
                 cx += m * (z + self.teeth[i + 1]) / 2.0
         if len(self.teeth) > 1:
