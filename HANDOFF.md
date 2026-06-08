@@ -5,6 +5,16 @@ Read this first when continuing in a fresh chat. Repo: `CanGitArchive/STM32-EMG-
 hardware portfolio piece (after the EMG prosthetic-hand thesis): a myoelectric gripper
 on real STM32 firmware. Edge-AI / embedded positioning.
 
+> 🎯 **THE GOAL IS NOT IN THIS FILE , read it first:**
+> `S:\Coding\ChatAssistants\HealthAssistant\CareerAssistant\STM32_project_goals.md` (the why) +
+> `STM32_Project_Scope.md` (parts, phased plan, JD-mapping). The project exists to demonstrate the
+> **Able Innovations "Embedded Systems Developer" JD** competencies on ONE board: **STM32 HAL +
+> FreeRTOS + CAN (MCP2515/SPI) + on-chip DSP + on-chip classification + safety (IWDG/failsafe) +
+> CI**. This HANDOFF covers the BUILD/algorithm; the goal doc is the why. **Reality check: the
+> firmware is currently a dumb USB-streamer + servo driver , ALL DSP/classification runs on the
+> laptop. So the embedded competencies the project exists to prove are still UNBUILT. The working
+> gripper is the prototype; porting it on-chip + RTOS + CAN + safety is the actual deliverable.**
+
 ## STATE: WORKING end to end (2026-06-08)
 
 Muscle EMG -> on-device DSP -> decision -> slew-limited servo -> 3D-printed involute-gear gripper.
@@ -27,6 +37,18 @@ firing). A FIXED threshold is brittle to fatigue (real, documented EMG effect). 
 demo; the proper future rung for long-session robustness = an ADAPTIVE threshold (track a slow
 running estimate of recent dip magnitude, set thr as a fraction of it, so it follows fatigue).
 Deliberately NOT built yet , checkpoint-first.
+
+**LATEST DECISIONS (chat 4 end) , SETTLED, do not re-litigate (this looped for 3 chats):**
+- **No DTW on the STM32.** The thesis owns DTW; repeating it adds nothing + it's fragile live.
+- **ONE gesture only , DROP the dip-counter** (committed `218aaec` but superseded). Two distinct
+  gestures only earn their fatigue if you need >2 commands; you don't , the embedded SYSTEM is the
+  deliverable, not the gesture count.
+- **Control = single gesture, GRADED/incremental** (each contraction nudges the gripper a step,
+  auto-reverse at the limits) , Can's "close a little / open a little", low-fatigue, shows a control
+  loop (a JD line). Single-gesture full TOGGLE is the trivial fallback.
+- **NEXT = THE PORT** (the real deliverable, scope steps 2-7): FreeRTOS -> on-chip DSP
+  (notch + baseline removal) -> on-chip single-gesture detector -> CAN (MCP2515/SPI) -> safety
+  (IWDG + signal-loss failsafe). Laptop EMG Studio stays as the calibration/test bench.
 **Read `docs/lessons_learned.md`** , every approach tried this session and why it failed (the
 full-wave-rectify echo root cause + the process lessons). Read it before re-touching the control.
 
