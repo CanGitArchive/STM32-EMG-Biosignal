@@ -13,7 +13,20 @@ Muscle EMG -> on-device DSP -> decision -> slew-limited servo -> 3D-printed invo
 -threshold, toggle open<->close. This is a deliberate RESET after a long classification saga
 (amplitude-DTW -> timing-debounce -> blip-counting) that all failed on the full-wave-rectify ECHO
 (see Signal-pipeline + Decision sections). DTW is still computed/plotted but drives nothing.
-Next rung Can named: build "1 dip = close, 2 dips = open" ON TOP of this working toggle.
+**Two committed checkpoints on main:** `d53ee46` (bare toggle) and the dip-counter (this commit).
+**DIP-COUNTING , 1 dip = close, 2 dips = open , CONFIRMED WORKING.** Same proven raw-dip detector,
+count dips, decide after a quiet `window` (sb_window 0.5 s) since the last dip. Knobs: `dip < -`
+(sb_thr, **425**) and `window s`. CSV has a `sig_min` column (per-tick min of raw) for analysis.
+Test `dtw_log_260608-184406.csv`: 4/4 (close,open,close,open). **Threshold validated** by a 71 s
+random-gesture test (`...184538.csv`): only a deliberate marker-force crossed -400 (to -522);
+deepest *accidental* dip was -394.5, 95% of motion stayed above -122. -425 gives ~30 margin each
+side (real contractions reach -456+). Earlier double-miss (`...183837`) was TIMING (dips 0.6 s
+apart > 0.55 s window), not threshold , raise `window s` for slower doubles.
+**FATIGUE (Can observed):** as he tired, dip depth fell (needed thr 425->350->300->250 to keep
+firing). A FIXED threshold is brittle to fatigue (real, documented EMG effect). Fine for a short
+demo; the proper future rung for long-session robustness = an ADAPTIVE threshold (track a slow
+running estimate of recent dip magnitude, set thr as a fraction of it, so it follows fatigue).
+Deliberately NOT built yet , checkpoint-first.
 **Read `docs/lessons_learned.md`** , every approach tried this session and why it failed (the
 full-wave-rectify echo root cause + the process lessons). Read it before re-touching the control.
 

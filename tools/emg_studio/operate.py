@@ -80,7 +80,7 @@ class Monitor(QtWidgets.QMainWindow):
         self.logf = open(os.path.join(log_dir, f'dtw_log_{stamp}.csv'), 'w', newline='')
         self.csv = csv.writer(self.logf)
         self.csv.writerow(['t_s'] + [f"dtw_{label}" for label in order]
-                          + ['env', 'fsm', 'npulse', 'gripper', 'fired'])
+                          + ['env', 'sig_min', 'fsm', 'npulse', 'gripper', 'fired'])
 
         self.setWindowTitle('EMG Studio : DTW monitor')
         central = QtWidgets.QWidget(); self.setCentralWidget(central)
@@ -108,14 +108,17 @@ class Monitor(QtWidgets.QMainWindow):
         def mkspin(lo, hi, val, step):
             s = QtWidgets.QDoubleSpinBox(); s.setRange(lo, hi); s.setValue(val); s.setSingleStep(step)
             s.setMaximumWidth(90); return s
-        self.sb_thr = mkspin(0, 700, 400, 10)   # TOGGLE the gripper when the raw signal dips below -this
-        ctrl.addWidget(QtWidgets.QLabel('toggle when raw < -')); ctrl.addWidget(self.sb_thr)
+        self.sb_thr = mkspin(0, 700, 425, 10)       # a "dip" = the raw signal going below -this
+        self.sb_window = mkspin(0.1, 2.0, 0.5, 0.1)  # wait this long after the last dip, then decide
+        for lbl, w in [('dip < -', self.sb_thr), ('window s', self.sb_window)]:
+            ctrl.addWidget(QtWidgets.QLabel(lbl)); ctrl.addWidget(w)
         ctrl.addStretch(1)
         root.addLayout(ctrl)
 
-        # SIMPLEST decision: TOGGLE the gripper each time raw dips below -threshold (one toggle per dip)
-        self.gripper = 'open'; self.fired = ''; self.state = 'ARMED'
-        self.toggle_armed = True; self.npulse = 0   # npulse kept = 0 only so the CSV/label don't break
+        # DIP-COUNTING decision: 1 dip = close, 2 dips = open (a dip = raw below -thr; decide after a
+        # quiet window since the last dip). Built on the proven raw-dip detector.
+        self.gripper = 'open'; self.fired = ''; self.state = 'IDLE'
+        self.dip_armed = True; self.npulse = 0; self.quiet = 0   # npulse = dips counted this gesture
 
         pg.setConfigOption('background', 'w'); pg.setConfigOption('foreground', 'k')
         pg.setConfigOptions(antialias=True)
@@ -169,15 +172,23 @@ class Monitor(QtWidgets.QMainWindow):
             vd[label] = best
         vals = [vd[label] for label in self.order]
 
-        # --- SIMPLEST decision: toggle the gripper on a downward dip past -threshold ---
+        # --- 1 dip = close, 2 dips = open (dip-counting on the proven raw-dip detector) ---
         self.fired = ''
         thr = self.sb_thr.value()
+        window = max(1, int(self.sb_window.value() * self.args.fs_disp))
         recent_min = float(sig_snap[-12:].min())   # most recent ~60 ms of the raw signal
-        if self.toggle_armed and recent_min <= -thr:
-            self.gripper = 'open' if self.gripper == 'close' else 'close'   # TOGGLE
-            self.fired = 'toggle'; self.state = 'FIRED'; self.toggle_armed = False
-        elif recent_min > -thr:                    # back above the line -> ready for the next dip
-            self.state = 'ARMED'; self.toggle_armed = True
+        new_dip = (recent_min <= -thr) and self.dip_armed
+        self.dip_armed = recent_min > -thr          # re-arm once the signal is back above -thr
+        if self.state == 'IDLE':
+            if new_dip:                             # first dip of a gesture
+                self.npulse = 1; self.quiet = 0; self.state = 'COUNTING'
+        elif self.state == 'COUNTING':
+            self.quiet += 1
+            if new_dip:                             # another dip within the window
+                self.npulse += 1; self.quiet = 0
+            if self.quiet >= window:                # quiet long enough since last dip -> decide
+                self.gripper = 'close' if self.npulse == 1 else 'open'
+                self.fired = self.gripper; self.state = 'IDLE'
 
         # drive the gripper when the decision changes it
         if self.gripper != self.last_sent:
@@ -189,7 +200,7 @@ class Monitor(QtWidgets.QMainWindow):
             self.last_sent = self.gripper
 
         self.csv.writerow([f'{time.time() - self.t0:.3f}'] + [f'{v:.2f}' for v in vals]
-                          + [f'{env_now:.1f}', self.state, self.npulse, self.gripper, self.fired])
+                          + [f'{env_now:.1f}', f'{recent_min:.1f}', self.state, self.npulse, self.gripper, self.fired])
 
         for label in self.order:
             self.curves[label].setData(self.tx, self.dtw_hist[label].snapshot())
