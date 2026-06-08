@@ -16,8 +16,8 @@ import serial
 from serial.tools import list_ports
 from PyQt6 import QtWidgets, QtCore
 
-SMIN, SMAX = 1280, 1650         # must match the firmware clamp (safe gripper band)
-OPEN_US, CLOSE_US = 1350, 1650  # measured open / full-close
+SMIN, SMAX = 1270, 1620         # must match the firmware clamp (safe gripper band)
+OPEN_US, CLOSE_US = 1300, 1600  # measured open / pinchers-almost-touching
 
 
 class ServoTest(QtWidgets.QMainWindow):

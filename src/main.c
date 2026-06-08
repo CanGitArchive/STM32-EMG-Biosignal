@@ -19,12 +19,11 @@
 #include <string.h>
 #include <stdlib.h>
 
-/* Measured gripper limits: 1250 us = max open (gears lock below), 1650 us = full close
- * (fingers touch above). Clamp just inside the lock limit and at the close limit so the
- * PLA can't be driven into a hard stop. Open rest = 1350, close = 1650. */
-#define SMIN     1280
-#define SMAX     1650
-#define SERVO_OPEN  1350    /* boot/rest position (gripper open, not gripping) */
+/* Measured gripper limits (2026-06-08): 1300 us = open, 1600 us = pinchers almost
+ * touching. Clamp just inside so the PLA can't be driven into a hard stop. */
+#define SMIN     1270
+#define SMAX     1620
+#define SERVO_OPEN  1300    /* boot/rest position (gripper open, not gripping) */
 #define SLEW     4          /* us per 5 ms loop -> ~800 us/s : gentle, never slams      */
 
 static ADC_HandleTypeDef  hadc1;

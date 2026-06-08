@@ -76,6 +76,7 @@ class CalibrateWindow(QtWidgets.QMainWindow):
         self.reader = reader
         self.rec_env = None
         self.region = None
+        self.editing_id = None      # set when re-trimming an existing template
         self.data = load_templates()
         self.data['fs'] = args.fs
         self._loading = False
@@ -133,6 +134,8 @@ class CalibrateWindow(QtWidgets.QMainWindow):
         row2.addWidget(QtWidgets.QLabel('Filter:'))
         self.filter = QtWidgets.QComboBox(); self.filter.addItems(['all'] + SLOT_LABELS)
         self.filter.currentTextChanged.connect(self.refresh_table); row2.addWidget(self.filter, 1)
+        self.edit_btn = QtWidgets.QPushButton('Edit / re-trim selected'); self.edit_btn.clicked.connect(self.on_edit)
+        row2.addWidget(self.edit_btn)
         self.del_btn = QtWidgets.QPushButton('Delete selected'); self.del_btn.clicked.connect(self.on_delete)
         row2.addWidget(self.del_btn)
         root.addLayout(row2)
@@ -173,12 +176,17 @@ class CalibrateWindow(QtWidgets.QMainWindow):
     def show_recording(self, rec):
         if not rec:
             return
+        self.editing_id = None; self.save_btn.setText('Save trimmed')   # a fresh capture appends
         sig = np.array([s for s, e in rec], dtype=float)
         env = np.array([e for s, e in rec], dtype=float)
+        self._show_trim(env, sig)
+
+    def _show_trim(self, env, sig=None):
         self.rec_env = env
         t = np.arange(len(env)) / self.args.fs
         self.rec.clear()
-        self.rec.plot(t, sig, pen=pg.mkPen('#bbbbbb', width=1))
+        if sig is not None:
+            self.rec.plot(t, sig, pen=pg.mkPen('#bbbbbb', width=1))
         self.rec.plot(t, env, pen=pg.mkPen('#e74c3c', width=2))
         self.rec.enableAutoRange()
         self.region = pg.LinearRegionItem([t[0], t[-1]], brush=pg.mkBrush(60, 120, 220, 40))
@@ -186,6 +194,20 @@ class CalibrateWindow(QtWidgets.QMainWindow):
         self.region.sigRegionChanged.connect(self.refresh_slots)
         self.save_btn.setEnabled(True)
         self.refresh_slots()
+
+    def on_edit(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        tid = self.table.item(row, 0).data(QtCore.Qt.ItemDataRole.UserRole)
+        t = next((x for x in self.data['templates'] if x['id'] == tid), None)
+        if t is None:
+            return
+        self.editing_id = tid
+        self.name_edit.setText(t['name'])
+        self.label_combo.setCurrentText(t['label'])
+        self.save_btn.setText('Save (update)')
+        self._show_trim(np.array(t['env'], dtype=float))   # re-trim the saved envelope
 
     # ---- save / delete / edit ----
     def on_save(self):
@@ -195,13 +217,18 @@ class CalibrateWindow(QtWidgets.QMainWindow):
         i0 = max(0, int(x0 * fs)); i1 = min(len(self.rec_env), int(x1 * fs))
         if i1 - i0 < 2:
             return
-        seg = self.rec_env[i0:i1]
+        seg = [round(float(x), 2) for x in self.rec_env[i0:i1]]
         label = self.label_combo.currentText().strip() or 'unnamed'
-        created = time.strftime('%Y-%m-%d %H:%M:%S')
         name = self.name_edit.text().strip() or f'{label} {time.strftime("%H:%M:%S")}'
-        self.data['templates'].append({
-            'id': new_id(), 'name': name, 'label': label, 'created': created,
-            'active': True, 'env': [round(float(x), 2) for x in seg]})
+        if self.editing_id:                     # re-trim: update the existing template
+            t = next((x for x in self.data['templates'] if x['id'] == self.editing_id), None)
+            if t:
+                t['name'] = name; t['label'] = label; t['env'] = seg
+            self.editing_id = None; self.save_btn.setText('Save trimmed')
+        else:
+            self.data['templates'].append({
+                'id': new_id(), 'name': name, 'label': label,
+                'created': time.strftime('%Y-%m-%d %H:%M:%S'), 'active': True, 'env': seg})
         save_templates(self.data)
         self.name_edit.clear()
         self.refresh_table(); self.refresh_slots()
@@ -227,6 +254,9 @@ class CalibrateWindow(QtWidgets.QMainWindow):
             self.refresh_slots()
         elif item.column() == 1:
             t['name'] = item.text()
+        elif item.column() == 2:
+            t['label'] = item.text().strip()
+            self.refresh_slots()
         save_templates(self.data)
 
     def refresh_table(self):
@@ -243,11 +273,11 @@ class CalibrateWindow(QtWidgets.QMainWindow):
             chk.setCheckState(QtCore.Qt.CheckState.Checked if t['active'] else QtCore.Qt.CheckState.Unchecked)
             chk.setData(QtCore.Qt.ItemDataRole.UserRole, t['id'])
             self.table.setItem(r, 0, chk)
-            name_item = QtWidgets.QTableWidgetItem(t['name'])
-            self.table.setItem(r, 1, name_item)
-            for c, val in [(2, t['label']), (3, t.get('created', '')), (4, str(len(t['env'])))]:
+            self.table.setItem(r, 1, QtWidgets.QTableWidgetItem(t['name']))         # editable
+            self.table.setItem(r, 2, QtWidgets.QTableWidgetItem(t['label']))        # editable (relabel)
+            for c, val in [(3, t.get('created', '')), (4, str(len(t['env'])))]:
                 it = QtWidgets.QTableWidgetItem(val)
-                it.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled)
+                it.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled)                       # read-only
                 self.table.setItem(r, c, it)
         self._loading = False
 

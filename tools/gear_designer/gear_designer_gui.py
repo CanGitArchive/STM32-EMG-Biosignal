@@ -17,6 +17,10 @@ from gear_designer import gear_outline, info, write_dxf
 
 COLORS = ['#1f77b4', '#e67e22', '#2ca02c', '#9467bd', '#17becf', '#d62728']
 
+# --- tweak to taste ---
+PANEL_W = 360      # left controls/info panel width (px)
+WIN_W, WIN_H = 1100, 680
+
 
 def min_teeth_no_undercut(pa_deg):
     return 2.0 / (math.sin(math.radians(pa_deg)) ** 2)
@@ -55,7 +59,7 @@ class GearGUI(QtWidgets.QMainWindow):
         self.btn_export.clicked.connect(self.on_export)
         left.addWidget(self.btn_export)
 
-        wl = QtWidgets.QWidget(); wl.setLayout(left); wl.setFixedWidth(280)
+        wl = QtWidgets.QWidget(); wl.setLayout(left); wl.setFixedWidth(PANEL_W)
         h.addWidget(wl)
 
         # right: live preview
@@ -94,7 +98,8 @@ class GearGUI(QtWidgets.QMainWindow):
 
         cx = 0.0
         zmin = min_teeth_no_undercut(pa)
-        html = [f'module m = {m:.2f} mm &nbsp; pressure angle {pa:.1f} deg<br><br>']
+        html = [f'module m = {m:.2f} mm &nbsp; pressure angle {pa:.1f} deg<br>'
+                f'bore {bore:.2f} mm &nbsp; backlash {bl:.2f} mm<br><br>']
         for i, (z, o) in enumerate(zip(self.teeth, self.outlines)):
             rp = m * z / 2.0
             oo = o + np.array([cx, 0.0])
@@ -143,7 +148,7 @@ class GearGUI(QtWidgets.QMainWindow):
 def main():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     app = QtWidgets.QApplication(sys.argv)
-    win = GearGUI(); win.resize(960, 640); win.show()
+    win = GearGUI(); win.resize(WIN_W, WIN_H); win.show()
     app.exec()
 
 

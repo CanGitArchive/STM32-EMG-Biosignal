@@ -106,8 +106,8 @@ class Monitor(QtWidgets.QMainWindow):
             s = QtWidgets.QDoubleSpinBox(); s.setRange(lo, hi); s.setValue(val); s.setSingleStep(step)
             s.setMaximumWidth(90); return s
         self.sb_acton = mkspin(0, 600, 40, 5)
-        self.sb_cap = mkspin(0, 9999, 900, 50)
-        self.sb_margin = mkspin(1.0, 5.0, 1.5, 0.1)
+        self.sb_cap = mkspin(0, 9999, 1500, 50)
+        self.sb_margin = mkspin(1.0, 5.0, 1.3, 0.1)
         self.sb_lockout = mkspin(0, 5, 1.2, 0.1)
         for lbl, w in [('activity env >', self.sb_acton), ('DTW cap <', self.sb_cap),
                        ('margin x', self.sb_margin), ('lockout s', self.sb_lockout)]:
@@ -119,6 +119,7 @@ class Monitor(QtWidgets.QMainWindow):
         self.state = 'IDLE'; self.gripper = 'open'; self.fired = ''
         self.min_act = {}; self.reset_timer = 0; self.lock_ticks = 0
         self.reset_need = max(1, int(0.3 * args.fs_disp))   # ~0.3 s of rest to re-arm
+        self.age = 0; self.warm_need = int(3.0 * args.fs_disp)   # warm-up: ignore decisions ~3 s
 
         pg.setConfigOption('background', 'w'); pg.setConfigOption('foreground', 'k')
         pg.setConfigOptions(antialias=True)
@@ -146,6 +147,10 @@ class Monitor(QtWidgets.QMainWindow):
     def step_fsm(self, env, vd):
         """Event-based pulse decision (see the README / discussion)."""
         self.fired = ''
+        self.age += 1
+        if self.age < self.warm_need:          # warm-up: let the DSP/window settle first
+            self.state = 'IDLE'
+            return
         act_on = self.sb_acton.value(); act_off = act_on * 0.6
         cap = self.sb_cap.value(); margin = self.sb_margin.value()
         actions = {k: v for k, v in vd.items() if k != 'relaxed'}
@@ -250,8 +255,8 @@ def main():
     ap.add_argument('--seconds', type=float, default=6.0)
     ap.add_argument('--env-max', type=float, default=600.0)
     ap.add_argument('--fs-disp', type=float, default=25.0, help='update/DTW rate (Hz)')
-    ap.add_argument('--open-us', type=int, default=1350, help='servo us for OPEN')
-    ap.add_argument('--close-us', type=int, default=1650, help='servo us for CLOSE')
+    ap.add_argument('--open-us', type=int, default=1300, help='servo us for OPEN')
+    ap.add_argument('--close-us', type=int, default=1600, help='servo us for CLOSE')
     args = ap.parse_args()
     signal.signal(signal.SIGINT, signal.SIG_IGN)   # immune to stray SIGINT; close via window
 
