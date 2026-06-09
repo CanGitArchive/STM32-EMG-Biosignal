@@ -1,8 +1,9 @@
+// Servo : the gripper (SG90, PWM on PB6 / D10). open()/close()/toggle() pick a position;
+// ease() (call every loop) glides toward it, never slamming the printed gears.
 #ifndef SERVO_H
 #define SERVO_H
 #include "stm32f4xx_hal.h"
 
-// Servo : the gripper (SG90, PWM on PB6 / D10). Eases toward a clamped target; never slams.
 class Servo
 {
   public:
@@ -25,47 +26,21 @@ class Servo
         htim.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
         HAL_TIM_PWM_Init(&htim);
 
-        // the PWM "compare" value IS the pulse width in microseconds; start at OPEN
         TIM_OC_InitTypeDef oc = {0};
         oc.OCMode = TIM_OCMODE_PWM1; oc.Pulse = OPEN; oc.OCPolarity = TIM_OCPOLARITY_HIGH;
         HAL_TIM_PWM_ConfigChannel(&htim, &oc, TIM_CHANNEL_1);
         HAL_TIM_PWM_Start(&htim, TIM_CHANNEL_1);
 
         targetPosition = currentPosition = OPEN;
+        closed = false;
     }
 
-    // The one call main uses each loop: aim at a position AND ease one step toward it.
-    void rotateTowards(int positionMicros)
-    {
-        setTarget(positionMicros);   // move the goalpost (clamped to the safe range)
-        easeOneStep();               // take one small step toward it
-    }
+    void open()   { closed = false; targetPosition = OPEN;  }   // choose the open position
+    void close()  { closed = true;  targetPosition = CLOSE; }   // choose the closed position
+    void toggle() { if (closed) open(); else close(); }         // flip between them
 
-    // Adjust how fast the gripper moves: microseconds of travel per step (bigger = faster).
-    void setRotationSpeed(int speed)
-    {
-        slew = clampToRange(speed, 1, 20);
-    }
-
-  private:
-    // Measured for OUR gripper (2026-06-08): 1300 us = open, 1600 us = almost closed.
-    // NOTE: these are PWM pulse widths in MICROSECONDS, not degrees - the servo turns them into an angle.
-    static const int MIN = 1270, MAX = 1620, OPEN = 1300;
-
-    static int clampToRange(int value, int low, int high)
-    {
-        if (value < low)  return low;
-        if (value > high) return high;
-        return value;
-    }
-
-    void setTarget(int positionMicros)
-    {
-        targetPosition = clampToRange(positionMicros, MIN, MAX);
-    }
-
-    // Move at most 'slew' microseconds toward the target, then write it to the PWM.
-    void easeOneStep()
+    // Call every loop: move at most 'slew' us toward the target, then write it to the PWM.
+    void ease()
     {
         int step = targetPosition - currentPosition;   // how far we still have to go
         if (step >  slew) step =  slew;                // ...but never more than 'slew' per call,
@@ -74,9 +49,24 @@ class Servo
         __HAL_TIM_SET_COMPARE(&htim, TIM_CHANNEL_1, currentPosition);
     }
 
+    // Adjust how fast the gripper moves: microseconds of travel per step (bigger = faster).
+    void setRotationSpeed(int speed) { slew = clampToRange(speed, 1, 20); }
+
+  private:
+    // Pulse widths in us, measured for OUR gripper (within the SG90's safe ~1270-1620 band).
+    static const int OPEN = 1300, CLOSE = 1600;
+
+    static int clampToRange(int value, int low, int high)
+    {
+        if (value < low)  return low;
+        if (value > high) return high;
+        return value;
+    }
+
     TIM_HandleTypeDef htim = {};
-    int slew = 4;                 // microseconds moved per step = rotation speed (see setRotationSpeed)
-    int targetPosition  = OPEN;   // where we want to be (pulse width in us)
-    int currentPosition = OPEN;   // where we are right now (eased toward the target)
+    int  slew = 4;                  // microseconds moved per step = rotation speed
+    int  targetPosition  = OPEN;    // where we want to be
+    int  currentPosition = OPEN;    // where we are now (eased toward the target)
+    bool closed = false;            // current gripper state
 };
 #endif

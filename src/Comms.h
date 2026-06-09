@@ -43,6 +43,14 @@ class Comms
         HAL_UART_Transmit(&huart, (uint8_t *)line, length, 10);   // 10 = give-up timeout (ms)
     }
 
+    // Stream the raw sample, the on-chip centered value, and the signal-valid flag, as "raw,centered,valid".
+    void sendStatus(uint16_t raw, int centered, bool valid)
+    {
+        char line[24];
+        int length = snprintf(line, sizeof line, "%u,%d,%d\r\n", (unsigned)raw, centered, valid ? 1 : 0);
+        HAL_UART_Transmit(&huart, (uint8_t *)line, length, 10);
+    }
+
     // Called from the USART2 interrupt, one byte at a time. Builds up a line; on a newline it
     // parses the number, remembers it (debug), and if it was tagged 'S' uses it for the servo.
     void onByteReceived()

@@ -12,26 +12,40 @@ Build: PlatformIO (`framework = stm32cube`). Flash: `pio run -t upload`.
 |---|---|
 | `main.cpp` | Creates the parts, runs the ~200 Hz loop, and holds the two hardware interrupt handlers (SysTick, USART2). |
 | `Emg.h` | `Emg` : the muscle sensor. ADC on PA0. `read()` returns one 0..4095 sample. |
-| `Servo.h` | `Servo` : the gripper. PWM on PB6 (TIM4 channel 1). `rotateTowards(us)` eases toward a target (clamped, never slams); `setRotationSpeed(1..20)` sets the step size. |
-| `Comms.h` | `Comms` : USB serial to the laptop (USART2). `sendDataCOM(v)` streams a sample; the interrupt `onByteReceived()` collects `S<us>` commands; `receivedDataForServo()` returns the latest. (`lastReceived()` / `lastText()` are debug peeks.) |
-| `Timer.h` | `Timer` : `waitForNextTick(ms)` paces the loop at a steady rate with no drift; `pause(ms)` is a plain blocking wait. Call `initialLoopTickStarter()` once after `HAL_Init`. |
+| `MuscleTrigger.h` | `MuscleTrigger` : the on-chip brain. Tracks the resting baseline live, centers the signal, and returns `true` once per valid flex (a "dip"). Includes the signal-loss failsafe (ignores railing input, freezes the baseline). |
+| `Servo.h` | `Servo` : the gripper. PWM on PB6 (TIM4 channel 1). `open()`/`close()`/`toggle()` choose a position; `ease()` (every loop) glides toward it, never slamming; `setRotationSpeed()` sets the step size. |
+| `Comms.h` | `Comms` : USB serial to the laptop (USART2). `sendStatus(raw, centered, valid)` streams telemetry as `raw,centered,valid`. (The old `S<us>` receive path is still present but unused now that the chip decides.) |
+| `Timer.h` | `Timer` : `waitForNextTick(ms)` paces the loop with no drift; `pause(ms)` is a plain blocking wait. Call `initialLoopTickStarter()` once after `HAL_Init`. |
 
 ## The loop (`main.cpp`, ~200 times a second)
 
 1. `emg.read()` : take one muscle sample.
-2. `comms.sendDataCOM(raw)` : send it to the laptop.
-3. `servo.rotateTowards(comms.receivedDataForServo())` : ease the gripper toward the latest command.
-4. `timer.waitForNextTick(5)` : wait out the rest of the 5 ms (200 Hz).
+2. `trigger.update(raw)` : on-chip baseline + centering + dip detection; returns true on a valid flex.
+3. on a flex, `servo.toggle()` : flip the gripper open <-> closed.
+4. `servo.ease()` : glide one step toward the target.
+5. `comms.sendStatus(raw, centered, trigger.isValid())` : stream telemetry for monitoring.
+6. `timer.waitForNextTick(5)` : hold the 200 Hz rate.
 
-The two interrupt handlers live at the bottom of `main.cpp`: `SysTick_Handler` keeps the HAL
-millisecond clock; `USART2_IRQHandler` feeds each arriving byte to `comms.onByteReceived()`.
+The two interrupt handlers at the bottom of `main.cpp`: `SysTick_Handler` keeps the HAL millisecond
+clock; `USART2_IRQHandler` feeds each byte to `comms.onByteReceived()` (the now-unused receive path).
 
-## Where the "thinking" is (today vs the goal)
+## Where the "thinking" is
 
-Right now the open/close DECISION runs on the laptop (`tools/emg_studio/operate.py`): it reads
-the stream, detects a muscle "dip", and sends back `S<us>` commands. The board just samples,
-streams, and obeys. Moving that decision ONTO the chip (so it runs standalone, with the laptop
-as just a viewer) is the next milestone.
+The decision now runs **on the chip** (`MuscleTrigger`): it tracks the resting baseline, centers the
+signal (so the threshold stays correct as the baseline drifts), detects a muscle "dip" past a
+threshold, and toggles the gripper, with a failsafe that holds if the signal goes bad (electrode
+unplugged / railing). The laptop is just a **viewer** of the `raw,centered,valid` stream (see
+`tools/emg_studio/chip_monitor.py`). The board runs standalone.
+
+## On-chip detector knobs (`MuscleTrigger.h`)
+
+| Knob | Value | Meaning |
+|---|---|---|
+| `DIP_THRESHOLD` | 425 | centered must dip this far below rest to count as a flex |
+| `REARM_LEVEL` | 150 | ...and climb back above -this to re-arm for the next flex |
+| `LOCKOUT` | 25 | samples (~125 ms) after a release before another flex counts (bounce guard) |
+| `RAIL_HIGH` / `RAIL_LOW` | 3000 / 25 | raw outside this band = bad signal (failsafe) |
+| `VALID_AFTER` | 200 | clean samples in a row (~1 s) needed to trust the signal again |
 
 ## Pins
 
