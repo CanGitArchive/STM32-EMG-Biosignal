@@ -10,8 +10,8 @@ Build: PlatformIO (`framework = stm32cube`). Flash: `pio run -t upload`.
 
 | File | What it is |
 |---|---|
-| `main.cpp` | Creates the parts, runs the ~200 Hz loop, and holds the two hardware interrupt handlers (SysTick, USART2). |
-| `Emg.h` | `Emg` : the muscle sensor. ADC on PA0. `read()` returns one 0..4095 sample. |
+| `main.cpp` | Creates the parts, runs the ~200 Hz loop (servo + telemetry + watchdog), and holds the interrupt handlers: SysTick, USART2, and the 1 kHz ADC/DMA callback where the brain runs. |
+| `Emg.h` | `Emg` : the muscle sensor. TIM2 triggers the ADC on PA0 at 1 kHz and DMA parks each result in RAM; `read()` returns the freshest sample (no CPU per reading). |
 | `MuscleTrigger.h` | `MuscleTrigger` : the on-chip brain. Tracks the resting baseline live, centers the signal, and returns `true` once per valid flex (a "dip"). Includes the signal-loss failsafe (ignores railing input, freezes the baseline). |
 | `Servo.h` | `Servo` : the gripper. PWM on PB6 (TIM4 channel 1). `open()`/`close()`/`toggle()` choose a position; `ease()` (every loop) glides toward it, never slamming; `setRotationSpeed()` sets the step size. |
 | `Comms.h` | `Comms` : USB serial to the laptop (USART2). `sendStatus(raw, centered, valid)` streams telemetry as `raw,centered,valid`. (The old `S<us>` receive path is still present but unused now that the chip decides.) |
@@ -19,18 +19,22 @@ Build: PlatformIO (`framework = stm32cube`). Flash: `pio run -t upload`.
 | `Watchdog.h` | `Watchdog` : the hardware IWDG. `pet()` once per loop; if the loop hangs and stops petting, the chip reboots itself (~2 s). |
 | `Notch.h` | `Notch` : a 50 Hz biquad notch; `filter()` on the centered signal kills mains hum (used by MuscleTrigger). |
 
-## The loop (`main.cpp`, ~200 times a second)
+## The 1 kHz brain + the 200 Hz loop
 
-1. `emg.read()` : take one muscle sample.
-2. `trigger.update(raw)` : on-chip baseline + centering + dip detection; returns true on a valid flex.
-3. on a flex, `servo.toggle()` : flip the gripper open <-> closed.
-4. `servo.ease()` : glide one step toward the target.
-5. `comms.sendStatus(raw, centered, trigger.isValid())` : stream telemetry for monitoring.
-6. `timer.waitForNextTick(5)` : hold the 200 Hz rate.
-7. `watchdog.pet()` : reset the ~2 s watchdog; if the loop ever hangs and skips this, the chip reboots itself.
+The brain runs in an interrupt, not the loop. `HAL_ADC_ConvCpltCallback` fires at 1 kHz (every time DMA
+has a fresh sample) and runs `trigger.update(emg.read())`: baseline + centering + notch + dip detection.
+On a valid flex it sets the `toggleRequested` flag.
 
-The two interrupt handlers at the bottom of `main.cpp`: `SysTick_Handler` keeps the HAL millisecond
-clock; `USART2_IRQHandler` feeds each byte to `comms.onByteReceived()` (the now-unused receive path).
+The `while(1)` loop, ~200 times a second, just:
+1. `emg.read()` / `trigger.centered()` : grab the latest values for telemetry.
+2. if `toggleRequested` : `servo.toggle()` and clear the flag.
+3. `servo.ease()` : glide one step toward the target.
+4. `comms.sendStatus(...)` : stream `raw,centered,valid` to the laptop.
+5. `timer.waitForNextTick(5)` : hold the 200 Hz rate.
+6. `watchdog.pet()` : reset the ~2 s watchdog.
+
+Interrupt handlers at the bottom of `main.cpp`: `SysTick_Handler` keeps the HAL ms clock; `USART2_IRQHandler`
+catches serial bytes; `DMA2_Stream0_IRQHandler` -> `HAL_ADC_ConvCpltCallback` is the 1 kHz brain.
 
 ## Where the "thinking" is
 
@@ -46,9 +50,9 @@ unplugged / railing). The laptop is just a **viewer** of the `raw,centered,valid
 |---|---|---|
 | `DIP_THRESHOLD` | 425 | centered must dip this far below rest to count as a flex |
 | `REARM_LEVEL` | 150 | ...and climb back above -this to re-arm for the next flex |
-| `LOCKOUT` | 25 | samples (~125 ms) after a release before another flex counts (bounce guard) |
+| `LOCKOUT` | 125 | samples (~125 ms at 1 kHz) after a release before another flex counts (bounce guard) |
 | `RAIL_HIGH` / `RAIL_LOW` | 3000 / 25 | raw outside this band = bad signal (failsafe) |
-| `VALID_AFTER` | 200 | clean samples in a row (~1 s) needed to trust the signal again |
+| `VALID_AFTER` | 1000 | clean samples in a row (~1 s at 1 kHz) needed to trust the signal again |
 
 ## Pins
 

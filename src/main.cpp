@@ -17,6 +17,7 @@ static Watchdog      watchdog;
 
 static uint16_t raw;        // latest muscle sample (0..4095)
 static int      centered;   // latest centered value (raw minus the live baseline)
+static volatile bool toggleRequested = false;   // the 1 kHz brain sets this; the loop acts on it
 
 int main(void)
 {
@@ -29,9 +30,9 @@ int main(void)
 
     while (1)
     {
-        raw = emg.read();                              // one muscle sample (0..4095)
-        if (trigger.update(raw)) servo.toggle();       // a valid flex flips the gripper
-        centered = trigger.centered();                 // latest centered value, for the telemetry stream
+        raw = emg.read();                              // latest sample, for telemetry
+        centered = trigger.centered();                 // latest centered value from the 1 kHz brain
+        if (toggleRequested) { servo.toggle(); toggleRequested = false; }   // the brain flagged a flex
         servo.ease();                                  // glide toward the gripper's target every loop
 
         comms.sendStatus(raw, centered, trigger.isValid());      // raw, centered, signal-valid flag
@@ -45,3 +46,8 @@ int main(void)
 // names un-mangled so the chip's jump-table finds them; each just pokes an object.
 extern "C" void SysTick_Handler(void)   { HAL_IncTick(); }           // every 1 ms: keep HAL's clock ticking
 extern "C" void USART2_IRQHandler(void) { comms.onByteReceived(); }  // a serial byte just arrived
+
+// The brain now runs HERE, at 1 kHz: the DMA fires this each time it has a fresh sample (like SysTick,
+// a handler the hardware calls, not a loop). It updates the detector and flags a flex for the loop.
+extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *h) { if (trigger.update(emg.read())) toggleRequested = true; }
+extern "C" void DMA2_Stream0_IRQHandler(void)                  { emg.handleDmaIrq(); }

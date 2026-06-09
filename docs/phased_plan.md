@@ -30,10 +30,10 @@ below keep the scope's labels; the checkmarks reflect actual order done.
 - [x] Blink LD2 (PA5) : confirmed ~1 Hz 2026-06-05
 - [ ] Step through with the ST-LINK debugger : optional, later
 
-## 2. EMG acquisition (HW)  acquisition works (polled 200 Hz); timer-trigger + DMA OPEN
-- [~] Current super-loop POLLS the ADC once per loop at 200 Hz (Emg.h): no timer trigger, no DMA.
-- REMOVED: a timer-triggered ADC at 1 kHz (TIM2 ISR) was real in the early firmware (commit a918064);
-      the Handoff 5 rewrite dropped it. DMA was never added. Timer-trigger + DMA = OPEN (recoverable from git).
+## 2. EMG acquisition (HW)  DONE: TIM2-triggered ADC + DMA at 1 kHz
+- [x] TIM2 hardware-triggers the ADC at 1 kHz; DMA copies each result into RAM with no CPU (Emg.h).
+      Verified 2026-06-10. The early firmware (a918064) had a 1 kHz timer-ISR ADC but no DMA and the
+      Handoff 5 rewrite dropped it to polled 200 Hz, so this is restored AND upgraded (DMA, not ISR-poll).
 - [x] Read Grove EMG analog envelope (PA0 / A0)
 - [x] Serial-plot / log the raw signal; characterized noise (see docs/emg_noise_findings.md)
 
@@ -41,9 +41,10 @@ below keep the scope's labels; the checkmarks reflect actual order done.
 - REMOVED: adaptive bias removal + 50 Hz notch biquad + rectify/moving-average envelope were REAL
       on-chip in the early firmware (commit a918064); the Handoff 5 rewrite (c79489f) dropped them.
       Recoverable from git toward the DSP box.
-- [x] 50 Hz mains-rejection notch biquad re-derived for the 200 Hz loop (Notch.h), on the centered
-      signal in MuscleTrigger. Verified 2026-06-09: the mains-hum band collapsed to a clean line, the
-      flex dip unchanged. Plus the EMA baseline + centering. (50 Hz = fs/4 at 200 Hz: a clean 3-term biquad.)
+- [x] 50 Hz mains-rejection notch biquad (Notch.h), on the centered signal in MuscleTrigger. First done
+      at 200 Hz (fs/4, a clean 3-term form), then moved to 1 kHz coefficients (the full 5-term biquad,
+      20 samples/cycle) when acquisition went to 1 kHz. Verified 2026-06-10: clean line, deep flex dip.
+      The baseline + centering + notch now run at 1 kHz in the DMA callback.
 - [ ] CMSIS-DSP band-pass / feature extraction : OPEN. (The old "not needed, Grove filters internally"
       framing judges by gripper function; the project exists to DEMONSTRATE the DSP box for the JD,
       the same mistake that mislabeled FreeRTOS. Treat as an open competency.)

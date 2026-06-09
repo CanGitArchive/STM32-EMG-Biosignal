@@ -15,14 +15,16 @@ EMG prosthetic-hand thesis): a myoelectric gripper on real STM32 firmware. Edge-
 The board reads the muscle, does the live signal-centering + the open/close decision ON-CHIP, drives the gripper, and
 fails safe, and reboots itself if the code hangs (IWDG watchdog), all standalone. The laptop is just a viewer/logger now.
 
-Firmware = a clean C++ super-loop of header-only classes in `src/` (a super-loop is the CURRENT
-implementation, not an RTOS , FreeRTOS is still an OPEN deliverable, see "Known deviations" below):
-- `Emg` (Emg.h): ADC on PA0; `read()` returns one 0..4095 sample.
-- `MuscleTrigger` (MuscleTrigger.h): the brain. Live baseline tracker (slow EMA, RATE 0.001),
-  centering (`centered = raw - baseline`), dip detection (fire once when `centered <= -425` while
-  armed and past the lockout; re-arm when `centered` climbs back above -150; LOCKOUT 25 samples
-  ~125 ms bounce-guard keyed off the RELEASE), and the signal-loss failsafe (raw outside [25,3000]
-  = bad; invalid until 200 clean samples ~1 s; while invalid it holds + freezes the baseline).
+Firmware = header-only classes in `src/`. Acquisition is hardware (TIM2 -> ADC -> DMA at 1 kHz); the
+brain runs in the 1 kHz DMA callback; a 200 Hz super-loop does servo + telemetry + watchdog. (Still no
+RTOS , the super-loop is the CURRENT implementation, FreeRTOS is an OPEN deliverable, see below):
+- `Emg` (Emg.h): TIM2 triggers the ADC on PA0 at 1 kHz; DMA parks each result in RAM. `read()` returns
+  the freshest sample (no CPU per reading).
+- `MuscleTrigger` (MuscleTrigger.h): the brain, now run at 1 kHz in the ADC/DMA callback. Live baseline
+  tracker (slow EMA, RATE 0.0002), centering (`centered = raw - baseline`) through a 50 Hz notch, dip
+  detection (fire once when `centered <= -425` while armed and past the lockout; re-arm above -150;
+  LOCKOUT 125 samples ~125 ms at 1 kHz), and the signal-loss failsafe (raw outside [25,3000] = bad;
+  invalid until 1000 clean samples ~1 s; while invalid it holds + freezes the baseline).
 - `Servo` (Servo.h): SG90 PWM on PB6 / TIM4_CH1; `open()`/`close()`/`toggle()` choose a position,
   `ease()` glides toward it (slew-limited), `setRotationSpeed()` tunes the step.
 - `Comms` (Comms.h): USART2 (USB VCP); `sendStatus()` streams "raw,centered,valid". (The old
@@ -30,8 +32,9 @@ implementation, not an RTOS , FreeRTOS is still an OPEN deliverable, see "Known 
 - `Timer` (Timer.h): `waitForNextTick(5)` = drift-free 200 Hz; `pause(ms)` = blocking delay.
 - `Watchdog` (Watchdog.h): hardware IWDG, ~2 s. `pet()` each loop; if the loop hangs and stops petting, the
   chip auto-reboots. Verified 2026-06-09 by a deliberate hang test.
-- `main.cpp`: make the objects, then loop {read -> trigger.update -> on a dip servo.toggle ->
-  servo.ease -> comms.sendStatus -> timer.waitForNextTick(5)}, plus the SysTick + USART2 handlers.
+- `main.cpp`: make the objects; the 1 kHz `HAL_ADC_ConvCpltCallback` runs `trigger.update` and flags a
+  flex; the 200 Hz loop reads the flag (servo.toggle), eases the servo, streams telemetry, waits the
+  tick, pets the watchdog. Handlers: SysTick, USART2, and DMA2_Stream0 -> the ADC callback.
 
 Behavior VERIFIED on hardware (2026-06-09): a flex toggles the gripper, one toggle per flex,
 including fast wrist-flicks (Can's low-fatigue method); pulling an electrode -> gripper holds, no
@@ -85,8 +88,8 @@ earlier handoff wrongly recorded the DSP as "done" and FreeRTOS as a settled cut
 not closed decisions:
 - FreeRTOS / RTOS , the current loop is a super-loop; the "sample / process / comms tasks"
   deliverable (and the JD's RTOS row) is OPEN. Can never decided to drop it.
-- DMA + timer-triggered ADC , the scope wants timer-triggered ADC + DMA; the firmware POLLS the ADC
-  once per loop (inherited from the streamer). Not flagged at the time; open.
+- DMA + timer-triggered ADC , DONE 2026-06-10: TIM2 hardware-triggers the ADC at 1 kHz and DMA moves
+  each sample to RAM (no CPU per reading). The 1 kHz notch + brain run in the DMA-complete callback.
 - DSP : a 50 Hz notch biquad is now on-chip (Notch.h, mains rejection, verified 2026-06-09). The
   CMSIS-DSP *library* swap + feature extraction stay optional (the notch demonstrates the DSP box).
 

@@ -51,13 +51,13 @@ class MuscleTrigger
     bool isValid()  const { return electrodesConnected; }     // is the signal trusted right now?
 
   private:
-    const float RATE          = 0.001f;  // baseline tracker speed (~5 s to follow drift at 200 Hz)
+    const float RATE          = 0.0002f; // baseline tracker speed (~5 s to follow drift at 1 kHz)
     const int   DIP_THRESHOLD = 425;     // centered must dip this far below rest to count as a flex
     const int   REARM_LEVEL   = 150;     // ...and climb back above -this to re-arm for the next one
-    const int   LOCKOUT       = 25;      // samples (~125 ms at 200 Hz) after a release before another fire counts
+    const int   LOCKOUT       = 125;     // samples (~125 ms at 1 kHz) after a release before another fire counts
     const int   RAIL_HIGH     = 3000;    // raw above this = bad signal (a real flex peaks ~2346)
     const int   RAIL_LOW      = 25;      // raw below this = bad signal (a real flex bottoms ~89)
-    const int   VALID_AFTER   = 200;     // need this many clean samples in a row (~1 s) to trust it
+    const int   VALID_AFTER   = 1000;    // need this many clean samples in a row (~1 s) to trust it
 
     float baseline = 0.0f;               // the live resting level
     bool  baselineInitialized = false;
