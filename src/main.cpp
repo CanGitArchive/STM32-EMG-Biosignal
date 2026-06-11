@@ -1,53 +1,46 @@
-// main.cpp : wires the parts together and runs the ~200 Hz loop. File layout: FIRMWARE_MAP.md
+// main.cpp : FreeRTOS bring-up , one blink task proves the scheduler boots (A2). The EMG super-loop is at git 71af159; it returns as tasks in Step B.
 #include "stm32f4xx_hal.h"
-#include "Emg.h"
-#include "Servo.h"
-#include "Comms.h"
-#include "Timer.h"
-#include "MuscleTrigger.h"
-#include "Watchdog.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
-// the parts, as global objects (built cheaply here; real setup happens in init()/the starter)
-static Emg           emg;
-static Servo         servo;
-static Comms         comms;
-static Timer         timer;
-static MuscleTrigger trigger;
-static Watchdog      watchdog;
+extern "C" void xPortSysTickHandler(void);   // the kernel's tick, defined in the ARM_CM4F port
 
-static uint16_t raw;        // latest muscle sample (0..4095)
-static int      centered;   // latest centered value (raw minus the live baseline)
-static volatile bool toggleRequested = false;   // the 1 kHz brain sets this; the loop acts on it
-
-int main(void)
+// The only task for now: blink the onboard LED (PA5 / LD2) at ~1 Hz. If LD2 blinks, the scheduler is alive.
+static void blinkTask(void *params)
 {
-    HAL_Init();          // wake up the HAL (the 1 ms tick, flash settings)
-    emg.init();
-    servo.init();
-    comms.init();
-    timer.initialLoopTickStarter();   // start the loop timer now that HAL's clock is running
-    watchdog.init();                  // arm the watchdog LAST, just before the loop starts petting it
+    (void)params;
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    GPIO_InitTypeDef led = {};
+    led.Pin   = GPIO_PIN_5;
+    led.Mode  = GPIO_MODE_OUTPUT_PP;
+    led.Pull  = GPIO_NOPULL;
+    led.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOA, &led);
 
     while (1)
     {
-        raw = emg.read();                              // latest sample, for telemetry
-        centered = trigger.centered();                 // latest centered value from the 1 kHz brain
-        if (toggleRequested) { servo.toggle(); toggleRequested = false; }   // the brain flagged a flex
-        servo.ease();                                  // glide toward the gripper's target every loop
-
-        comms.sendStatus(raw, centered, trigger.isValid());      // raw, centered, signal-valid flag
-
-        timer.waitForNextTick(5);                      // do the work, then wait out the rest of the 5 ms
-        watchdog.pet();                                // a healthy iteration finished: reset the ~2 s countdown
+        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+        vTaskDelay(pdMS_TO_TICKS(500));   // toggle every 500 ms -> ~1 Hz blink
     }
 }
 
-// Hardware interrupt handlers: the chip calls these by their exact names. extern "C" keeps the
-// names un-mangled so the chip's jump-table finds them; each just pokes an object.
-extern "C" void SysTick_Handler(void)   { HAL_IncTick(); }           // every 1 ms: keep HAL's clock ticking
-extern "C" void USART2_IRQHandler(void) { comms.onByteReceived(); }  // a serial byte just arrived
+int main(void)
+{
+    HAL_Init();   // HAL + its 1 ms SysTick
 
-// The brain now runs HERE, at 1 kHz: the DMA fires this each time it has a fresh sample (like SysTick,
-// a handler the hardware calls, not a loop). It updates the detector and flags a flex for the loop.
-extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *h) { if (trigger.update(emg.read())) toggleRequested = true; }
-extern "C" void DMA2_Stream0_IRQHandler(void)                  { emg.handleDmaIrq(); }
+    xTaskCreate(blinkTask, "blink", 128, nullptr, 1, nullptr);   // 128 words of stack, priority 1 (above idle's 0)
+    vTaskStartScheduler();   // hands the CPU to the kernel; does NOT return while the scheduler runs
+
+    while (1) { }   // only reached if the scheduler could not start (e.g. heap too small)
+}
+
+// SysTick now drives BOTH clocks: HAL's millisecond counter, and (once the scheduler is up) the kernel tick.
+// The guard stops xPortSysTickHandler from firing before vTaskStartScheduler has set the kernel up.
+extern "C" void SysTick_Handler(void)
+{
+    HAL_IncTick();
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED)
+    {
+        xPortSysTickHandler();
+    }
+}
