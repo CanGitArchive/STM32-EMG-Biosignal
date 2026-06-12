@@ -90,9 +90,54 @@ class Mcp2515CanBus
         writeRegister(REG_CANCTRL, 0x00);   // 0x00: Normal mode, one-shot off, CLKOUT off
     }
 
+    // Loopback mode (REQOP = 010): the chip routes its own transmit straight into its own receiver,
+    // internally. No bus wires, no second node, no ACK needed. Perfect for testing frame code alone.
+    void enterLoopbackMode() { writeRegister(REG_CANCTRL, 0b01000000); }
+
+    // Tell receive buffer 0 to accept ANY frame (RXM = 11 switches the ID filters/masks off). Without it,
+    // the freshly-reset filters could drop our frame.
+    void acceptAllOnRxBuffer0() { writeRegister(REG_RXB0CTRL, 0b01100000); }
+
+    // Build a standard (11-bit ID) data frame in TX buffer 0 and fire it. length = 0..8 data bytes.
+    void sendFrame(uint16_t id, const uint8_t *data, uint8_t length)
+    {
+        writeRegister(REG_TXB0SIDH, (uint8_t)(id >> 3));            // the ID's top 8 bits
+        writeRegister(REG_TXB0SIDL, (uint8_t)((id & 0x07) << 5));   // the ID's bottom 3 bits, parked in bits 7..5
+        writeRegister(REG_TXB0DLC, length);                        // how many data bytes follow
+        for (uint8_t i = 0; i < length; i++)
+            writeRegister(REG_TXB0D0 + i, data[i]);                // the payload, byte by byte
+        requestToSendTxb0();                                       // "send it now"
+    }
+
+    // Did a frame land in receive buffer 0? RX0IF is bit 0 of the interrupt-flag register.
+    bool messageWaiting() { return (readRegister(REG_CANINTF) & 0x01) != 0; }
+
+    // Read the frame out of receive buffer 0 into id + data[]; returns the data length. Clears the flags
+    // afterwards so the next frame can be detected.
+    uint8_t readFrame(uint16_t *id, uint8_t *data)
+    {
+        uint8_t sidh = readRegister(REG_RXB0SIDH);
+        uint8_t sidl = readRegister(REG_RXB0SIDL);
+        *id = (uint16_t)(sidh << 3) | (sidl >> 5);     // rebuild the 11-bit ID from its two halves
+        uint8_t length = readRegister(REG_RXB0DLC) & 0x0F;
+        for (uint8_t i = 0; i < length; i++)
+            data[i] = readRegister(REG_RXB0D0 + i);
+        writeRegister(REG_CANINTF, 0x00);              // clear all flags (incl. RX0IF) so the next frame shows
+        return length;
+    }
+
   private:
     void select()   { HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET); }   // CS LOW  = start talking
     void deselect() { HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);   }   // CS HIGH = done talking
+
+    // The "request to send" instruction is a single command byte (no address), unlike read/write.
+    void requestToSendTxb0()
+    {
+        uint8_t command = CMD_RTS_TXB0;
+        select();
+        HAL_SPI_Transmit(&hspi, &command, 1, 100);
+        deselect();
+    }
 
     // MCP2515 SPI command bytes + the one register we read in step 1 (from the chip's datasheet).
     static const uint8_t CMD_RESET  = 0xC0;   // reset the whole chip to a known state
@@ -104,11 +149,25 @@ class Mcp2515CanBus
     static const uint8_t REG_CNF2    = 0x29;  // bit-timing config 2
     static const uint8_t REG_CNF1    = 0x2A;  // bit-timing config 1
 
-    // Bit timing for an 8 MHz crystal @ 500 kbps. These exact bytes are the ones the Arduino bench used
-    // (coryjfowler MCP_CAN), so the STM32 node and the Arduino node agree on the wire speed.
-    static const uint8_t CNF1_8MHZ_500K = 0x00;
-    static const uint8_t CNF2_8MHZ_500K = 0x90;
-    static const uint8_t CNF3_8MHZ_500K = 0x82;
+    // Bit timing for an 8 MHz crystal @ 500 kbps (bench-proven values). Written in BINARY so each byte
+    // lines up 1:1 with the datasheet's CNF register diagrams (C++ 0b literals are the same number as hex,
+    // just a different notation the compiler parses). 8 TQ per bit, sample point ~62.5%.
+    static const uint8_t CNF1_8MHZ_500K = 0b00000000;   // SJW[7:6]=00 (1 TQ) | BRP[5:0]=000000 (TQ = 2/8MHz = 250 ns)
+    static const uint8_t CNF2_8MHZ_500K = 0b10010000;   // BTLMODE=1 | SAM=0 | PHSEG1[5:3]=010 (3 TQ) | PRSEG[2:0]=000 (1 TQ)
+    static const uint8_t CNF3_8MHZ_500K = 0b10000010;   // SOF=1 | WAKFIL=0 | --- | PHSEG2[2:0]=010 (3 TQ)
+
+    // TX buffer 0, RX buffer 0, interrupt flags + the request-to-send command (step 3: sending frames).
+    static const uint8_t REG_TXB0SIDH = 0x31;  // transmit: standard ID, high bits
+    static const uint8_t REG_TXB0SIDL = 0x32;  // transmit: standard ID, low bits
+    static const uint8_t REG_TXB0DLC  = 0x35;  // transmit: data length code (how many data bytes)
+    static const uint8_t REG_TXB0D0   = 0x36;  // transmit: first data byte (D0..D7 = 0x36..0x3D)
+    static const uint8_t REG_RXB0CTRL = 0x60;  // receive buffer 0: control (filter mode)
+    static const uint8_t REG_RXB0SIDH = 0x61;  // receive: standard ID, high bits
+    static const uint8_t REG_RXB0SIDL = 0x62;  // receive: standard ID, low bits
+    static const uint8_t REG_RXB0DLC  = 0x65;  // receive: data length code
+    static const uint8_t REG_RXB0D0   = 0x66;  // receive: first data byte (0x66..0x6D)
+    static const uint8_t REG_CANINTF  = 0x2C;  // interrupt flags; bit 0 = RX0IF (a frame arrived in RXB0)
+    static const uint8_t CMD_RTS_TXB0 = 0x81;  // one-byte "request to send, TX buffer 0" instruction
 
     SPI_HandleTypeDef hspi = {};
 };

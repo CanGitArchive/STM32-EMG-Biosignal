@@ -73,27 +73,40 @@ int main(void)
     servo.init();
     comms.init();
 
-    // --- STEP 2b PROBE (temporary scaffolding; delete once CAN bring-up is verified) ------------------
-    // Set the wire speed (8 MHz @ 500 kbps) and switch the chip from Configuration mode to Normal mode,
-    // then read CANSTAT to confirm the switch took. Mode bits 000 = Normal, so CANSTAT should be 0x00
-    // (it was 0x80 in config mode). Still no CAN bus wires. Loop never returns (FreeRTOS firmware paused).
+    // --- STEP 3a PROBE (temporary scaffolding; delete once CAN bring-up is verified) ------------------
+    // Loopback test: the chip routes its own transmit back into its own receiver (no bus wires, no second
+    // node, no ACK). Build a frame, send it, read it back, print both: they should match. This is the
+    // "send == read" bounce. Still SPI-only on the wire. Loop never returns (FreeRTOS firmware paused).
     canBus.init();
     canBus.reset();
-    canBus.setBitTiming8MHz500k();   // must match the Arduino bench, or the two nodes can't talk later
-    canBus.enterNormalMode();        // go live
+    canBus.setBitTiming8MHz500k();      // bit timing is writable only in config mode (now, before we leave it)
+    canBus.acceptAllOnRxBuffer0();
+    canBus.enterLoopbackMode();
+    uint8_t counter = 0;
     while (1)
     {
-        uint8_t canstat = canBus.readCanstat();
-        uint8_t mode    = canstat & 0xE0;   // keep only the top 3 bits (the operating-mode field)
-        char line[64];
-        if (mode == 0x00)
-            snprintf(line, sizeof line, "CANSTAT = 0x%02X  (Normal mode: chip is live)\r\n", canstat);
+        uint8_t txData[4] = { 0x45, 0x4D, 0x47, counter };   // 'E' 'M' 'G' + a counter (matches the bench frame)
+        canBus.sendFrame(0x100, txData, 4);
+        HAL_Delay(5);                                        // let the loopback land in the RX buffer
+
+        char line[96];
+        if (canBus.messageWaiting())
+        {
+            uint16_t rxId;
+            uint8_t  rxData[8];
+            uint8_t  len = canBus.readFrame(&rxId, rxData);
+            snprintf(line, sizeof line, "sent 0x100 [45 4D 47 %02X] -> got 0x%03X [%02X %02X %02X %02X] len=%u\r\n",
+                     counter, rxId, rxData[0], rxData[1], rxData[2], rxData[3], len);
+        }
         else
-            snprintf(line, sizeof line, "CANSTAT = 0x%02X  (NOT Normal yet, wanted mode bits 000)\r\n", canstat);
+        {
+            snprintf(line, sizeof line, "sent 0x100 counter=%02X -> NOTHING received\r\n", counter);
+        }
         comms.sendLine(line);
+        counter++;
         HAL_Delay(1000);
     }
-    // --- end step-2b probe -------------------------------------------------------------------------
+    // --- end step-3a probe -------------------------------------------------------------------------
 
     watchdog.init();     // arm the IWDG; watchdogTask feeds it
 
