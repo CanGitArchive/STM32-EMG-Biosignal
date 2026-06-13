@@ -30,3 +30,10 @@ tools/gear_designer/gear_preview.png
 docs/MCP2515.PDF
 docs/MCP2515_SPI_instruction_set.png
 docs/MCP2515_register_map.png
+
+# editor / assistant config + internal working docs (kept local, not for the public repo)
+.claude/
+*.code-workspace
+HANDOFF.md
+NEXT_CHAT_PROMPT.md
+docs/demo_video_plan.md
