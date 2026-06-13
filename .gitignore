@@ -37,3 +37,12 @@ docs/MCP2515_register_map.png
 HANDOFF.md
 NEXT_CHAT_PROMPT.md
 docs/demo_video_plan.md
+
+# internal planning + orphaned raw captures + stale laptop tools (kept local, not public)
+docs/phased_plan.md
+docs/lessons_learned.md
+docs/80O_resistor_norebound.txt
+docs/Can_LogicAnalyzing_Convorsation*
+tools/emg_studio/*.py
+!tools/emg_studio/chip_monitor.py
+tools/emg_studio/templates.json

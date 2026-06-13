@@ -1,18 +1,10 @@
 #!/usr/bin/env python3
-# chip_monitor.py : live view + logger for the on-chip firmware's "raw,centered,valid" stream.
+# chip_monitor.py : live view + CSV logger for the firmware's "raw,centered,valid" serial stream.
+# Plots the centered EMG with the dip-threshold (-425) and re-arm (-150) lines, and a SIGNAL OK / LOST
+# banner from the on-chip failsafe flag. A reader thread does only serial reads (into a ring buffer);
+# the GUI logs one decimated row per frame so the plot never lags.
 #
-# Built on the same no-lag pattern as emg_studio.py / operate.py:
-#   - the reader thread does NOTHING but read serial + push into a ring buffer (never touches disk),
-#   - the GUI logs ONE row per frame (~33/sec), NOT all 200 samples/sec. Writing every sample to a
-#     growing file is what stalled the GUI and made the serial reader rubber-band.
-# The live plot still shows the full 200 Hz (from the ring); only the CSV log is decimated, exactly
-# like operate.py's dtw_logs.
-#
-# Plot   : centered EMG, with the dip threshold (-425) and re-arm (-150) lines drawn.
-# Banner : SIGNAL OK / SIGNAL LOST (the on-chip failsafe's valid flag).
-#
-# Usage:  python chip_monitor.py --port COM6
-# Close the PlatformIO Serial Monitor / other tools first (one program per COM port).
+# Usage:  python chip_monitor.py --port COM6   (close the PlatformIO Serial Monitor first)
 import os, sys, signal, argparse, threading, time, csv
 os.environ.setdefault('PYQTGRAPH_QT_LIB', 'PyQt6')
 import numpy as np
