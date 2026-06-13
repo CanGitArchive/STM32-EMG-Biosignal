@@ -7,7 +7,7 @@ A self-contained myoelectric gripper on real STM32 firmware: it reads a forearm 
 <!-- INLINE VIDEO: on GitHub, edit this README in the web UI and DRAG docs/demo_video_STM32.mp4 into the
      editor right here. GitHub uploads it and inserts a player link that plays inline. Then delete the
      image-link line below (or keep it as a fallback). -->
-[![Watch the demo](docs/demo_still.png)](docs/demo_video_STM32.mp4)
+[![Watch the demo](docs/demo_still.png)](https://github.com/user-attachments/assets/aa81c4aa-91ec-4cf5-a480-a131216e033e)
 
 ▶ **[Watch the ~30s demo](docs/demo_video_STM32.mp4)**: flex → gripper actuates → state broadcast over CAN, plus the fail-safe (pull an electrode, the gripper holds).
 
