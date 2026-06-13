@@ -36,17 +36,17 @@ class Mcp2515CanBus
         hspi.Init.CLKPhase          = SPI_PHASE_1EDGE;         // ...and data is read on the first (rising) edge
         hspi.Init.NSS               = SPI_NSS_SOFT;            // we do chip-select ourselves (PB12), not the block
         hspi.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8; // 16 MHz / 8 = 2 MHz: gentle + easy for the analyzer
-        hspi.Init.FirstBit          = SPI_FIRSTBIT_MSB;        // most-significant bit first (what the MCP2515 expects)
+        hspi.Init.FirstBit          = SPI_FIRSTBIT_MSB;        // most-significant (left) bit first, what the MCP2515 expects
         hspi.Init.TIMode            = SPI_TIMODE_DISABLE;
         hspi.Init.CRCCalculation    = SPI_CRCCALCULATION_DISABLE;
         HAL_SPI_Init(&hspi);
     }
 
     // Send the one-byte RESET command, then wait for the chip to finish its internal reset. After this
-    // the MCP2515 is in Configuration mode, so CANSTAT reads 0x80.
+    // the MCP2515 is in Configuration mode, so the current-mode register reads 0x80.
     void reset()
     {
-        uint8_t command = CMD_RESET;
+        uint8_t command = CMD_RESET_CHIP;
         select();
         HAL_SPI_Transmit(&hspi, &command, 1, 100);   // 100 = give-up timeout (ms)
         deselect();
@@ -74,7 +74,7 @@ class Mcp2515CanBus
         return received[2];                          // the register value rode back in on the 3rd byte
     }
 
-    uint8_t readCanstat() { return readRegister(STATUS_REGISTER); }   // 0x80 right after reset = "Configuration mode"
+    uint8_t readCanstat() { return readRegister(GET_CURRENT_MODE); }   // 0x80 right after reset = "Configuration mode"
 
     // Set the wire speed (8 MHz crystal @ 500 kbps). Every node on a CAN bus MUST agree on this exactly,
     // or they can't decode each other. Writable only while in Configuration mode (i.e. right after reset).
@@ -85,43 +85,43 @@ class Mcp2515CanBus
         writeRegister(BIT_TIMING_3, BIT_TIMING_3_VALUE_8MHZ_500K);
     }
 
-    // Leave Configuration mode and go live: REQOP = 000 in CANCTRL = Normal mode. After this the chip
-    // participates on the bus, and CANSTAT's mode bits read 000 (so CANSTAT = 0x00).
-    void enterNormalMode() { writeRegister(CONTROL_REGISTER, MODE_NORMAL); }
+    // Leave Configuration mode and go live: REQOP = 000 = Normal mode. After this the chip participates
+    // on the bus, and the current-mode register reads 0x00.
+    void enterNormalMode() { writeRegister(SET_MODE, SET_NORMAL_MODE); }
 
     // Loopback mode: the chip routes its own transmit straight into its own receiver, internally.
     // No bus wires, no second node, no ACK needed. Perfect for testing frame code alone.
-    void enterLoopbackMode() { writeRegister(CONTROL_REGISTER, MODE_LOOPBACK); }
+    void enterLoopbackMode() { writeRegister(SET_MODE, SET_LOOPBACK_MODE); }
 
-    // Tell receive buffer 0 to accept ANY frame (turns the ID filters/masks off). Without it, the
-    // freshly-reset filters could drop our frame.
-    void acceptAllOnRxBuffer0() { writeRegister(RX_BUFFER0_CONTROL, RX_ACCEPT_ANY); }
+    // Tell receive buffer 0 to keep ANY frame (turns the ID filters off). Without it, the freshly-reset
+    // filters could drop our frame.
+    void acceptAllOnRxBuffer0() { writeRegister(SET_FILTER_MODE, RX_ACCEPT_ANY); }
 
     // Build a standard (11-bit ID) data frame in TX buffer 0 and fire it. length = 0..8 data bytes.
     void sendFrame(uint16_t id, const uint8_t *data, uint8_t length)
     {
-        writeRegister(TX_BUFFER0_ID_HIGH, (uint8_t)(id >> 3));            // the ID's top 8 bits
-        writeRegister(TX_BUFFER0_ID_LOW,  (uint8_t)((id & 0x07) << 5));   // the ID's bottom 3 bits, parked in bits 7..5
-        writeRegister(TX_BUFFER0_LENGTH, length);                        // how many data bytes follow
+        writeRegister(SET_ID_LEFT8_BITS,  (uint8_t)(id >> 3));          // the ID's left/top 8 bits
+        writeRegister(SET_ID_RIGHT3_BITS, (uint8_t)((id & 0x07) << 5)); // the ID's right/bottom 3 bits, parked in bits 7..5
+        writeRegister(SET_DATA_LENGTH, length);                         // how many data bytes follow
         for (uint8_t i = 0; i < length; i++)
-            writeRegister(TX_BUFFER0_DATA0 + i, data[i]);                // the payload, byte by byte
+            writeRegister(SET_DATA0 + i, data[i]);                      // the payload, byte by byte
         requestToSendTxb0();                                            // "send it now"
     }
 
-    // Did a frame land in receive buffer 0? RX0IF is bit 0 of the interrupt-flag register.
-    bool messageWaiting() { return (readRegister(INTERRUPT_FLAGS) & 0x01) != 0; }
+    // Did a frame land in receive buffer 0? Bit 0 of the interrupt-flag register is the "frame arrived" flag.
+    bool messageWaiting() { return (readRegister(GET_SET_INTERRUPT_STATE) & 0x01) != 0; }
 
     // Read the frame out of receive buffer 0 into id + data[]; returns the data length. Clears the flags
     // afterwards so the next frame can be detected.
     uint8_t readFrame(uint16_t *id, uint8_t *data)
     {
-        uint8_t sidh = readRegister(RX_BUFFER0_ID_HIGH);
-        uint8_t sidl = readRegister(RX_BUFFER0_ID_LOW);
+        uint8_t sidh = readRegister(GET_ID_LEFT8_BITS);
+        uint8_t sidl = readRegister(GET_ID_RIGHT3_BITS);
         *id = (uint16_t)(sidh << 3) | (sidl >> 5);     // rebuild the 11-bit ID from its two halves
-        uint8_t length = readRegister(RX_BUFFER0_LENGTH) & 0x0F;
+        uint8_t length = readRegister(GET_DATA_LENGTH) & 0x0F;
         for (uint8_t i = 0; i < length; i++)
-            data[i] = readRegister(RX_BUFFER0_DATA0 + i);
-        writeRegister(INTERRUPT_FLAGS, CLEAR_ALL_FLAGS);   // clear flags (incl. RX0IF) so the next frame shows
+            data[i] = readRegister(GET_DATA0 + i);
+        writeRegister(GET_SET_INTERRUPT_STATE, CLEAR_INTERRUPT_STATE);   // clear flags so the next frame shows
         return length;
     }
 
@@ -129,10 +129,10 @@ class Mcp2515CanBus
     void select()   { HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET); }   // CS LOW  = start talking
     void deselect() { HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);   }   // CS HIGH = done talking
 
-    // The "request to send" instruction is a single command byte (no address), unlike read/write.
+    // The "transmit now" instruction is a single command byte (no address), unlike read/write.
     void requestToSendTxb0()
     {
-        uint8_t command = CMD_REQUEST_TO_SEND_TX0;
+        uint8_t command = CMD_TRANSMIT_NOW;
         select();
         HAL_SPI_Transmit(&hspi, &command, 1, 100);
         deselect();
