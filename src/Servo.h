@@ -1,5 +1,4 @@
-// Servo : the gripper (SG90, PWM on PB6 / D10). open()/close()/toggle() pick a position;
-// ease() (call every loop) glides toward it, never slamming the printed gears.
+// Servo : the SG90 gripper (PWM on PB6); open/close/toggle pick a position, ease() glides toward it each loop.
 #ifndef SERVO_H
 #define SERVO_H
 #include "stm32f4xx_hal.h"

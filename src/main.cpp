@@ -1,6 +1,4 @@
-// main.cpp : the standalone myoelectric gripper under FreeRTOS. servoTask (~200 Hz) + commsTask (~50 Hz
-// serial telemetry) + canTask (CAN: gesture event + ~5 Hz status heartbeat) + watchdogTask. The 1 kHz
-// brain runs in the DMA callback and hands each flex to servoTask AND canTask via queues.
+// main.cpp : the standalone myoelectric gripper under FreeRTOS (servo, comms, CAN, watchdog tasks + a 1 kHz brain in the DMA ISR).
 #include "stm32f4xx_hal.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -22,8 +20,7 @@ static MuscleTrigger trigger;
 static Watchdog      watchdog;
 static Mcp2515CanBus canBus;
 
-// The brain (DMA ISR) drops one token in here per valid flex; servoTask waits on it. This replaces the
-// old volatile flag: a queue is the safe ISR->task hand-off, it does the locking, so no manual volatile.
+// The brain (DMA ISR) drops one token per flex; servoTask waits on it. A queue is the safe ISR-to-task hand-off.
 static QueueHandle_t mailBox;
 // A second copy of the same flex signal, for canTask to announce the gesture over CAN immediately.
 static QueueHandle_t canMailBox;
@@ -57,10 +54,7 @@ static void commsTask(void *params)
     }
 }
 
-// canTask : reports the gripper over CAN. Blocks on canMailBox with a 200 ms timeout (the servoTask
-// pattern): a queued token (the brain just saw a flex) -> send an immediate GESTURE frame (ID 0x100);
-// a timeout -> send a periodic status heartbeat (ID 0x101). Both carry the same two bytes,
-// [gripper closed? 0/1][electrode attached? 0/1]. SPI2 is canTask's alone, so no locking is needed.
+// canTask : a queued flex token sends a gesture frame (0x100); a 200 ms timeout sends a status heartbeat (0x101).
 static void canTask(void *params)
 {
     (void)params;
@@ -82,8 +76,7 @@ static void canTask(void *params)
     }
 }
 
-// watchdogTask : lowest priority. Pets the IWDG every 500 ms (well inside the ~2 s timeout). Being lowest
-// IS the safety: if a higher task hangs and never yields, this never runs -> never pets -> the chip reboots.
+// watchdogTask : lowest priority, pets the IWDG every 500 ms; if a higher task hangs it starves and the chip reboots.
 static void watchdogTask(void *params)
 {
     (void)params;
@@ -130,9 +123,7 @@ extern "C" void SysTick_Handler(void)
     if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) { xPortSysTickHandler(); }
 }
 
-// The 1 kHz brain. On a valid flex, hand a token to servoTask via the queue, then yield so the higher-
-// priority servoTask runs the instant this ISR exits. The DMA interrupt is priority 5 (the syscall
-// ceiling), so calling xQueueSendFromISR from here is allowed.
+// The 1 kHz brain: on a valid flex, queue a token to servoTask and canTask, then yield to the woken task.
 extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *h)
 {
     if (mailBox != NULL && trigger.update(emg.read()))   // queues are NULL until the scheduler is set up

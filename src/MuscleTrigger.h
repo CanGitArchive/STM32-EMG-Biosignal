@@ -1,5 +1,4 @@
-// MuscleTrigger : on-chip baseline tracking + dip detection. update() returns true on the one
-// sample a valid muscle "dip" should toggle the gripper. Ignores garbage (failsafe) and double-fires.
+// MuscleTrigger : on-chip baseline tracking + dip detection; update() returns true once per valid flex.
 #ifndef MUSCLE_TRIGGER_H
 #define MUSCLE_TRIGGER_H
 #include "stm32f4xx_hal.h"
@@ -8,8 +7,7 @@
 class MuscleTrigger
 {
   public:
-    // Feed one raw sample per loop. Returns true exactly once per valid flex (a "dip").
-    // While the signal is invalid (electrode unplugged / railing) it returns false and holds.
+    // Feed one raw sample per loop; returns true once per valid flex, false while the signal is invalid.
     bool update(uint16_t raw)
     {
         samplesSinceRearm++;

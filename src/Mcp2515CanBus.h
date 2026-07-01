@@ -1,6 +1,4 @@
-// Mcp2515CanBus : the CAN-bus controller (an MCP2515 chip on the end of SPI2). The STM32 controls it
-// entirely by reading/writing its registers over SPI. All the command/register/value bytes live in
-// Mcp2515Registers.h (the datasheet, as code); this file is the logic that uses them.
+// Mcp2515CanBus : the MCP2515 CAN controller over SPI2; the command/register bytes live in Mcp2515Registers.h.
 #ifndef MCP2515_CAN_BUS_H
 #define MCP2515_CAN_BUS_H
 #include "stm32f4xx_hal.h"
@@ -42,8 +40,7 @@ class Mcp2515CanBus
         HAL_SPI_Init(&hspi);
     }
 
-    // Send the one-byte RESET command, then wait for the chip to finish its internal reset. After this
-    // the MCP2515 is in Configuration mode, so the current-mode register reads 0x80.
+    // Send the RESET command; after it the MCP2515 is in Configuration mode (current-mode register reads 0x80).
     void reset()
     {
         uint8_t command = CMD_RESET_CHIP;
@@ -53,8 +50,7 @@ class Mcp2515CanBus
         HAL_Delay(10);                               // let the reset settle before any more SPI
     }
 
-    // Write one register: clock out [WRITE, address, value] in one CS-low...CS-high. The chip has no
-    // reply for a write, so this is a plain transmit (no dummy byte, nothing to read back here).
+    // Write one register: clock out [WRITE, address, value] in one CS-low to CS-high (a plain transmit).
     void writeRegister(uint8_t address, uint8_t value)
     {
         uint8_t toSend[3] = { CMD_WRITE_REGISTER, address, value };
@@ -76,8 +72,7 @@ class Mcp2515CanBus
 
     uint8_t readCanstat() { return readRegister(GET_CURRENT_MODE); }   // 0x80 right after reset = "Configuration mode"
 
-    // Set the wire speed (8 MHz crystal @ 500 kbps). Every node on a CAN bus MUST agree on this exactly,
-    // or they can't decode each other. Writable only while in Configuration mode (i.e. right after reset).
+    // Set the wire speed (8 MHz crystal @ 500 kbps); every node must match it. Writable only in Configuration mode.
     void setBitTiming8MHz500k()
     {
         writeRegister(BIT_TIMING_1, BIT_TIMING_1_VALUE_8MHZ_500K);
@@ -85,16 +80,13 @@ class Mcp2515CanBus
         writeRegister(BIT_TIMING_3, BIT_TIMING_3_VALUE_8MHZ_500K);
     }
 
-    // Leave Configuration mode and go live: REQOP = 000 = Normal mode. After this the chip participates
-    // on the bus, and the current-mode register reads 0x00.
+    // Leave Configuration mode and go live: REQOP = 000 = Normal mode (current-mode register then reads 0x00).
     void enterNormalMode() { writeRegister(SET_MODE, SET_NORMAL_MODE); }
 
-    // Loopback mode: the chip routes its own transmit straight into its own receiver, internally.
-    // No bus wires, no second node, no ACK needed. Perfect for testing frame code alone.
+    // Loopback mode: the chip routes its own transmit into its own receiver, no bus or second node needed.
     void enterLoopbackMode() { writeRegister(SET_MODE, SET_LOOPBACK_MODE); }
 
-    // Tell receive buffer 0 to keep ANY frame (turns the ID filters off). Without it, the freshly-reset
-    // filters could drop our frame.
+    // Tell receive buffer 0 to keep any frame (turns the ID filters off, which a fresh reset could apply).
     void acceptAllOnRxBuffer0() { writeRegister(SET_FILTER_MODE, RX_ACCEPT_ANY); }
 
     // Build a standard (11-bit ID) data frame in TX buffer 0 and fire it. length = 0..8 data bytes.
@@ -111,8 +103,7 @@ class Mcp2515CanBus
     // Did a frame land in receive buffer 0? Bit 0 of the interrupt-flag register is the "frame arrived" flag.
     bool messageWaiting() { return (readRegister(GET_SET_INTERRUPT_STATE) & 0x01) != 0; }
 
-    // Read the frame out of receive buffer 0 into id + data[]; returns the data length. Clears the flags
-    // afterwards so the next frame can be detected.
+    // Read the frame from receive buffer 0 into id + data[], return the length, and clear the flags.
     uint8_t readFrame(uint16_t *id, uint8_t *data)
     {
         uint8_t sidh = readRegister(GET_ID_LEFT8_BITS);

@@ -2,8 +2,7 @@
 #define EMG_H
 #include "stm32f4xx_hal.h"
 
-// Emg : the muscle sensor (ADC on PA0). TIM2 triggers the ADC at 1 kHz and DMA writes each result
-// into 'sample' on its own (no CPU per reading). read() just returns the freshest sample.
+// Emg : the muscle sensor on PA0; TIM2 triggers the ADC at 1 kHz and DMA parks each result in 'sample'.
 class Emg
 {
   public:

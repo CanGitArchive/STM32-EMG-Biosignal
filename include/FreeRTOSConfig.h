@@ -1,5 +1,4 @@
-// FreeRTOSConfig.h : tunes the kernel for THIS board (Nucleo-F446RE, HSI 16 MHz). FreeRTOS.h includes
-// this by name. Settings only, no logic. Lives in include/ so both our code AND the kernel sources see it.
+// FreeRTOSConfig.h : kernel config for this board (Nucleo-F446RE, HSI 16 MHz); settings only, no logic.
 #ifndef FREERTOS_CONFIG_H
 #define FREERTOS_CONFIG_H
 
@@ -44,8 +43,7 @@
 // --- catch config/usage mistakes during bring-up: freeze here so the debugger lands on the bad line ---
 #define configASSERT( x ) if ( ( x ) == 0 ) { taskDISABLE_INTERRUPTS(); while(1); }
 
-// --- Cortex-M NVIC interrupt-priority wiring (REQUIRED by the ARM_CM4F port) ---
-// STM32F4 implements 4 priority bits. Reminder: LOWER number = MORE urgent.
+// --- NVIC interrupt-priority wiring (REQUIRED by the ARM_CM4F port); STM32F4 has 4 bits, LOWER number = MORE urgent ---
 #ifdef __NVIC_PRIO_BITS
     #define configPRIO_BITS  __NVIC_PRIO_BITS   // pull the real value from CMSIS (4 on STM32F4)
 #else
@@ -61,10 +59,7 @@
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY \
         ( configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << ( 8 - configPRIO_BITS ) )
 
-// --- hand the CPU's exception vectors to the kernel ---
-// The vector table calls SVC_Handler / PendSV_Handler by those exact names; point them at the port's code.
-// NOTE: we deliberately do NOT remap SysTick here. Our own SysTick_Handler (main.cpp) will call BOTH
-// HAL_IncTick() and the kernel's xPortSysTickHandler(), so HAL keeps its 1 ms clock. (Wired in sub-step 4.)
+// --- point SVC/PendSV at the port's handlers; SysTick stays ours (main.cpp calls both HAL and the kernel) ---
 #define vPortSVCHandler     SVC_Handler
 #define xPortPendSVHandler  PendSV_Handler
 

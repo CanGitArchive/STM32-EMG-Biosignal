@@ -3,8 +3,7 @@
 #include "stm32f4xx_hal.h"
 #include <stdio.h>     // snprintf
 
-// Comms : one-way USB serial telemetry to the laptop (USART2 TX). The board reports its state; it does
-// not take commands (the gripper is driven by the muscle, not the serial port).
+// Comms : one-way USB serial telemetry to the laptop (USART2 TX); the board reports state, takes no commands.
 class Comms
 {
   public:

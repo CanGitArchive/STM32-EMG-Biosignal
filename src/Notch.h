@@ -14,8 +14,7 @@ class Notch
     }
 
   private:
-    // These constants = a 50 Hz notch at the 1 kHz sample rate (20 samples per cycle), Q = 2.5.
-    // Recompute them (a filter calculator) for a different rate or mains frequency, e.g. Canada's 60 Hz.
+    // A 50 Hz notch at the 1 kHz sample rate, Q = 2.5; recompute for a different rate or mains frequency.
     const float B0 =  0.9417923f;
     const float B1 = -1.7913934f;
     const float B2 =  0.9417923f;

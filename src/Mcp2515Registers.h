@@ -1,7 +1,4 @@
-// Mcp2515Registers : the MCP2515 datasheet, as code. Every command byte, register address, and bit-field
-// value the driver uses lives here with its datasheet name in the comment, so Mcp2515CanBus.h stays pure
-// logic and you can defend each number against the datasheet (no mystery values from random sites).
-// Notation follows the datasheet: SPI commands + bit-fields in binary (their bit-diagrams), addresses in hex.
+// Mcp2515Registers : the MCP2515 datasheet as code, every command/address/value with its datasheet name.
 #ifndef MCP2515_REGISTERS_H
 #define MCP2515_REGISTERS_H
 #include <stdint.h>
@@ -38,8 +35,7 @@ static const uint8_t SET_LOOPBACK_MODE     = 0b01000000;  // into SET_MODE: REQO
 static const uint8_t RX_ACCEPT_ANY         = 0b01100000;  // into SET_FILTER_MODE: RXM=11, keep every frame (filters off)
 static const uint8_t CLEAR_INTERRUPT_STATE = 0b00000000;  // into GET_SET_INTERRUPT_STATE: all flags back to 0
 
-// Bit timing for an 8 MHz crystal @ 500 kbps (bench-proven values; fields per the CNF bit-diagrams).
-// 8 time-quanta per bit, sample point ~62.5%. Every node on the bus must use the same effective rate.
+// Bit timing for an 8 MHz crystal @ 500 kbps (8 TQ per bit, sample point ~62.5%); every node must match it.
 static const uint8_t BIT_TIMING_1_VALUE_8MHZ_500K = 0b00000000; // CNF1: SJW=00 (1 TQ) | BRP=000000 (TQ = 2/8MHz)
 static const uint8_t BIT_TIMING_2_VALUE_8MHZ_500K = 0b10010000; // CNF2: BTLMODE=1 | SAM=0 | PHSEG1=010 | PRSEG=000
 static const uint8_t BIT_TIMING_3_VALUE_8MHZ_500K = 0b10000010; // CNF3: SOF=1 | WAKFIL=0 | PHSEG2=010

@@ -1,5 +1,4 @@
-// sender.cpp : Arduino UNO + MCP2515 (8 MHz). Sends one CAN frame every 500 ms. (PlatformIO env: sender)
-// Library: coryjfowler MCP_CAN (pulled by platformio.ini lib_deps).
+// sender.cpp : Arduino UNO + MCP2515 (8 MHz) that sends one CAN frame every 500 ms (coryjfowler MCP_CAN library).
 #include <Arduino.h>
 #include <SPI.h>
 #include <mcp_can.h>

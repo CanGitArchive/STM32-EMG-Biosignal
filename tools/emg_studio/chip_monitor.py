@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-# chip_monitor.py : live view + CSV logger for the firmware's "raw,centered,valid" serial stream.
-# Plots the centered EMG with the dip-threshold (-425) and re-arm (-150) lines, and a SIGNAL OK / LOST
-# banner from the on-chip failsafe flag. A reader thread does only serial reads (into a ring buffer);
-# the GUI logs one decimated row per frame so the plot never lags.
-#
-# Usage:  python chip_monitor.py --port COM6   (close the PlatformIO Serial Monitor first)
+# chip_monitor.py : live view + CSV logger for the firmware's "raw,centered,valid" serial stream. Usage: python chip_monitor.py --port COM6
 import os, sys, signal, argparse, threading, time, csv
 os.environ.setdefault('PYQTGRAPH_QT_LIB', 'PyQt6')
 import numpy as np
@@ -31,8 +26,7 @@ class Ring:
 
 
 class Reader(threading.Thread):
-    # Reads "raw,centered,valid" and pushes centered into the ring. No disk I/O, no heavy work,
-    # so it always keeps up with the 200 Hz stream. It just exposes the latest values for the GUI.
+    # Reads "raw,centered,valid" and pushes centered into the ring; no disk I/O, keeps up with the 200 Hz stream.
     def __init__(self, ser, cen_ring):
         super().__init__(daemon=True)
         self.ser = ser

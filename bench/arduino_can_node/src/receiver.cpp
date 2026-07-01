@@ -1,5 +1,4 @@
-// receiver.cpp : Arduino UNO + MCP2515 (8 MHz). Prints every CAN frame received. (PlatformIO env: receiver)
-// Open the serial monitor at 115200 to watch frames arrive.
+// receiver.cpp : Arduino UNO + MCP2515 (8 MHz) that prints every CAN frame received (serial monitor at 115200).
 #include <Arduino.h>
 #include <SPI.h>
 #include <mcp_can.h>
